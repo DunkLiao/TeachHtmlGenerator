@@ -312,3 +312,6 @@ python generate_site.py
 - `output_html/`：生成產物
 - 請優先修改來源或模板程式，再重新生成
 
+## 作者
+Dunk & CODEX
+
