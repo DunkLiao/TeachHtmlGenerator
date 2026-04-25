@@ -380,7 +380,7 @@ def collect_articles() -> list[Article]:
     used_names: set[str] = set()
     articles: list[Article] = []
 
-    for path in sorted(SOURCE_DIR.glob("*.txt")):
+    for path in sorted(SOURCE_DIR.glob("*.txt"), key=lambda item: (-item.stat().st_mtime, item.name.lower())):
         text = read_text_with_detected_encoding(path)
         intro, sections, summary = parse_text_sections(text)
         output_name = slugify_filename(path.stem, used_names)
