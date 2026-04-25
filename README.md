@@ -1,6 +1,6 @@
 # TeachHtmlGenerator
 
-`TeachHtmlGenerator` 是一個用 Python 撰寫的靜態網站產生器，專門把 `source/` 裡的教學文章純文字檔轉成一個可直接瀏覽的 HTML 小型網站。
+`TeachHtmlGenerator` 是一個用 Python 撰寫的靜態網站產生器，會把 `source/` 裡的教學文章純文字檔轉成可直接瀏覽的 HTML 網站。
 
 目前專案的定位很明確：
 
@@ -18,57 +18,65 @@
 - 讓非工程背景的人也能只靠編輯 `.txt` 檔更新內容
 - 文字檔來源：詢問notebooklm的回答結果。
 
+## 目前功能
+
+- 自動讀取 `source/` 內所有 `.txt` 文章
+- 依檔名產生頁面標題與輸出檔名
+- 支援 Markdown 與常見 GFM 語法輸出
+- 自動建立文章頁目錄錨點
+- 首頁提供文章標題即時搜尋
+- 自動產生摘要並套用 CJK 友善截斷
+- 複製共用樣式到輸出目錄
+
 ## 技術棧
 
-### 後端 / 生成端
+### 生成端
 
 - Python 3
 - Python 標準函式庫
-  - `pathlib`：路徑處理
-  - `dataclasses`：文章與段落資料模型
-  - `re`：文字解析與檔名清理
-  - `html`：HTML escape
-  - `shutil`：複製樣式檔
-  - `unicodedata`：檔名正規化
-- `charset-normalizer`（可選）
-  - 用來提升 `.txt` 來源檔的編碼辨識能力
+  - `pathlib`
+  - `dataclasses`
+  - `re`
+  - `html`
+  - `shutil`
+  - `unicodedata`
+- `charset-normalizer`
+  - 改善來源文字編碼辨識
+- `markdown-it-py`
+  - 將文章內容解析成 HTML
+- `mdit-py-plugins`
+  - 啟用 task list 等延伸語法
+- `linkify-it-py`
+  - 支援自動連結辨識
 
 ### 前端輸出
 
 - 純 HTML5
-- 單一共享 CSS 檔：[`style.css`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/style.css)
-- 原生 SVG icon 內嵌在 HTML 中
-- 無 JavaScript
+- 單一共享樣式檔 [`style.css`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/style.css)
+- 首頁少量原生 JavaScript，用於前端搜尋過濾
+- 原生 SVG icon 直接內嵌在 HTML 中
 
 ## 專案結構
 
 ```text
 TeachHtmlGenerator/
-├─ generate_site.py      # 主程式：讀取文字、解析文章、輸出 HTML
+├─ generate_site.py      # 主程式：讀取來源、轉成 HTML、輸出網站
 ├─ style.css             # 共用樣式
 ├─ run.bat               # Windows 執行入口
-├─ requirements.txt      # 可選依賴
+├─ requirements.txt      # 專案依賴
 ├─ source/               # 文章來源 .txt
-└─ output_html/          # 產生後的網站輸出
+└─ output_html/          # 生成後網站輸出
 ```
 
-## 執行方式
+## 安裝與執行
 
-### 1. 安裝依賴
+先安裝依賴：
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-`requirements.txt` 目前只有一個可選套件：
-
-```text
-charset-normalizer>=3.3,<4
-```
-
-就算沒安裝，程式仍可執行，只是會退回內建的多組編碼嘗試。
-
-### 2. 產生網站
+再產生網站：
 
 ```powershell
 python generate_site.py
@@ -86,114 +94,63 @@ run.bat
 - 每篇文章對應的 `.html`
 - `style.css`
 
-## 整體流程
+## 生成流程
 
-專案流程很單純，核心都在 [`generate_site.py`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/generate_site.py)：
+核心邏輯集中在 [`generate_site.py`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/generate_site.py)：
 
-1. 讀取 `source/` 下所有 `.txt` 檔
-2. 自動偵測文字編碼
+1. 掃描 `source/` 內所有 `.txt`
+2. 嘗試偵測並讀取文字編碼
 3. 正規化換行與 BOM
-4. 解析文章前言與分節內容
-5. 產生摘要
-6. 將原始檔名轉成安全的輸出檔名
-7. 產出 `index.html` 與各文章頁
+4. 以 Markdown/GFM 規則解析內容
+5. 建立文章摘要與目錄錨點
+6. 依原始檔名產生安全輸出檔名
+7. 輸出 `index.html` 與各文章頁
 8. 複製 `style.css` 到 `output_html/`
 
-## 文字檔格式規則
+## 文字檔格式
 
-這個生成器支援的文章格式不是 Markdown 全語法，而是「簡化規則」。
+目前文章內容不是走舊版的自訂 `**章節**` 規則，而是直接交給 Markdown 解析器處理。
 
-### 1. 檔名
+可用的內容形式包含：
 
-- `source` 內每個 `.txt` 檔都代表一篇文章
-- 檔名（不含副檔名）會直接作為文章標題
-- 同時也會作為輸出頁面的 slug 基礎
+- 段落
+- 標題 `#`、`##`、`###`
+- 粗體、斜體、行內程式碼
+- 清單與核取方塊
+- 表格
+- 自動連結
 
-例如：
+HTML 原始碼不會直接放行；程式會先 escape 再交給 Markdown renderer，因此來源文字會以較保守、安全的方式輸出。
 
-```text
-source/教我如何利用 AI 輔助寫出複雜的 Excel 公式？.txt
-```
+## 摘要與文章目錄
 
-會變成類似：
+摘要會從文章中第一個可讀文字區塊擷取，再做長度裁切。
 
-```text
-output_html/教我如何利用-AI-輔助寫出複雜的-Excel-公式.html
-```
+- 一般摘要邏輯使用 `summarize()`
+- 首頁與文章頁顯示時會再使用 `summarize_cjk_friendly()`，避免中日韓文字被截得太難看
 
-### 2. 分段
+文章內容中的標題會自動建立錨點 `id`，並在文章頁右側或上方顯示「文章目錄」。
 
-- 空白行會切出新段落
-- 連續文字會被視為同一段
+- 所有標題都會被賦予錨點
+- `h2` 以上層級會進入 TOC 清單
+- 相同標題會自動補 `-2`、`-3` 避免衝突
 
-### 3. 章節標題
+## 檔名與輸出規則
 
-符合這個格式的單行文字會被視為一個 section 標題：
+來源檔名會同時影響文章標題與輸出檔名。
 
-```text
-**章節標題**
-```
+- 檔名去掉副檔名後，直接作為文章標題
+- 會經過 Unicode `NFKC` 正規化
+- 允許英數字、CJK、日文、韓文、`.`、`_`、空白、`-`
+- 多個空白會壓成單一 `-`
+- 會補上 `.html`
+- 若重名，會自動加上 `-2`、`-3` 等尾碼
 
-例如：
-
-```text
-**第一步：先讓 AI 看懂資料的結構**
-```
-
-### 4. 粗體
-
-內文中的 `**文字**` 會轉成 `<strong>`
-
-例如：
-
-```text
-請先確認 **每一欄的用途** 是否一致。
-```
-
-### 5. 沒有章節標題時
-
-如果整篇文章完全沒有 `**章節標題**` 這種分節格式，程式會自動建立一個預設章節：
-
-- 標題：`內容重點`
-
-## 實際解析邏輯
-
-### intro 與 sections
-
-程式會把第一個 section 標題之前的段落當成 `intro`，之後每個 `**標題**` 區塊視為一個 section。
-
-但目前輸出的文章頁只渲染 `sections`，不單獨顯示 `intro` 區塊；`intro` 主要用於摘要來源判定。
-
-### 摘要產生
-
-摘要來源規則如下：
-
-- 有 `intro` 時，優先取 `intro[0]`
-- 否則取第一個 section 的第一段
-
-另外專案有兩種摘要策略：
-
-- `summarize()`：一般長度裁切
-- `summarize_cjk_friendly()`：對中日韓字元較友善，避免截斷觀感太差
-
-首頁與文章頁都使用了偏向 CJK 顯示友善的摘要版本。
-
-## 檔名與 slug 規則
-
-檔名處理邏輯包含幾件事：
-
-- 使用 Unicode `NFKC` 正規化
-- 保留英數字、CJK、日文、韓文、`.`、`_`、空白、`-`
-- 多個空白壓成單一 `-`
-- 去除前後多餘符號
-- 自動補上 `.html`
-- 若重名，會加上 `-2`、`-3` 這類尾碼
-
-因此它對中文檔名是友善的，不會強制轉成拼音或 ASCII slug。
+因此中文檔名可直接保留，不需要另外手動轉 slug。
 
 ## 編碼處理
 
-來源文字會先走 `charset-normalizer` 偵測；若套件不存在，則退回這些編碼逐一嘗試：
+讀取來源文字時，程式會優先使用 `charset-normalizer` 偵測；若不可用，則退回以下編碼依序嘗試：
 
 - `utf-8`
 - `utf-8-sig`
@@ -201,45 +158,35 @@ output_html/教我如何利用-AI-輔助寫出複雜的-Excel-公式.html
 - `big5`
 - `gb18030`
 
-如果都失敗，最後會用 `utf-8` 搭配 `errors="replace"` 兜底。
+若全部失敗，最後會用 `utf-8` 加上 `errors="replace"` 兜底。
 
-這使得專案對繁中常見文字來源相對寬容。
-
-## 產出頁面說明
+## 輸出頁面
 
 ### 首頁 `index.html`
 
-首頁會列出所有文章卡片，包含：
+首頁目前包含：
 
-- 文章標題
-- 短摘要
-- 文章連結
-- 已收錄篇數
+- 站點主視覺區塊
+- 已收錄文章數
+- 文章標題搜尋欄
+- 文章卡片列表
+
+搜尋是前端即時過濾，依標題文字比對，不需要後端。
 
 ### 文章頁
 
-每篇文章頁會顯示：
+每篇文章頁目前包含：
 
 - 文章標題
-- 簡短摘要
-- section 卡片列表
+- 文章摘要
 - 返回首頁按鈕
+- 文章目錄
+- Markdown 轉換後的正文內容
 - 固定頁尾資訊
-
-## 樣式設計
-
-樣式集中在 [`style.css`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/style.css)，目前特徵如下：
-
-- 暖色系品牌配色
-- 單欄閱讀式文章頁
-- 卡片式 section 呈現
-- 固定底部 footer
-- 響應式設計，針對 `860px` 與 `520px` 有斷點
-- 以 `Noto Sans TC` / `Microsoft JhengHei` 等中文字型優先
 
 ## `run.bat` 行為
 
-[`run.bat`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/run.bat) 是 Windows 方便執行入口，流程是：
+[`run.bat`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/run.bat) 的流程是：
 
 1. 切換到專案目錄
 2. 優先找 `D:\ProgramData\anaconda3\python.exe`
@@ -247,37 +194,33 @@ output_html/教我如何利用-AI-輔助寫出複雜的-Excel-公式.html
 4. 執行 `generate_site.py`
 5. 顯示成功或失敗訊息
 
-這代表它目前偏向 Windows 本機使用情境，而且對特定 Anaconda 路徑有優先支援。
+這個批次檔偏向 Windows 本機使用情境。
 
-## 開發與維護建議
+## 開發說明
 
 ### 日常更新內容
 
-如果你只是要新增或修改文章，通常只需要：
+如果只是新增或修改文章，通常只需要：
 
 1. 編輯 `source/*.txt`
 2. 執行 `python generate_site.py`
 3. 檢查 `output_html/index.html` 與文章頁
 
-### 調整版面
+### 調整樣式
 
-若要改外觀，請修改：
+請修改 [`style.css`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/style.css)。
 
-- [`style.css`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/style.css)
+### 調整生成邏輯
 
-### 調整解析規則
-
-若要改文章格式、摘要、slug 或輸出 HTML 結構，請修改：
-
-- [`generate_site.py`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/generate_site.py)
+請修改 [`generate_site.py`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/generate_site.py)。
 
 ### 不建議直接修改輸出檔
 
-`output_html/` 是產物目錄，除錯以外不建議手改。
+`output_html/` 是生成產物，除錯以外不建議直接手改。
 
 ## 手動驗證
 
-目前沒有自動化測試；每次修改後建議至少做這些檢查：
+目前沒有自動化測試；每次修改後建議至少執行：
 
 ```powershell
 python generate_site.py
@@ -286,26 +229,25 @@ python generate_site.py
 然後確認：
 
 - `output_html/index.html` 已重新產生
-- 至少開一篇文章頁，確認標題、摘要、section 內容正確
+- 至少開一篇文章頁，確認標題、摘要、Markdown 內容與目錄正常
 - 至少檢查一篇非 ASCII / 中文檔名來源文章
 
 ## 已知限制
 
-- 不是完整 Markdown parser
-- 不支援圖片、清單、表格、程式碼區塊
-- `intro` 目前會參與摘要判定，但不會獨立渲染在文章頁
-- 頁尾文案寫死在程式常數中
 - 沒有自動化測試
-- 沒有 CLI 參數，輸入輸出目錄目前固定
+- 沒有 CLI 參數，輸入與輸出目錄目前固定
+- 首頁搜尋只比對文章標題，不搜尋內文
+- 站點標題與 footer 內容目前寫死在程式常數中
+- 來源文字中的原始 HTML 不會直接當作 HTML 輸出
 
 ## 後續可擴充方向
 
 - 加入 `pytest` 測試
-- 支援更多文字語法，例如清單或引用
 - 將站點標題、footer 文案改為可設定
 - 增加 CLI 參數，例如自訂輸入輸出路徑
-- 讓文章頁顯示 `intro`
-- 產生 sitemap 或 metadata
+- 支援文章標籤、分類或排序選項
+- 增加 sitemap、Open Graph 或其他 metadata
+- 補上內容全文搜尋
 
 ## 授權與產物說明
 
@@ -314,5 +256,5 @@ python generate_site.py
 - 請優先修改來源或模板程式，再重新生成
 
 ## 作者
-Dunk & CODEX
 
+Dunk & CODEX

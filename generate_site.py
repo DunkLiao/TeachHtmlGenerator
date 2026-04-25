@@ -7,6 +7,10 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
+from markdown_it import MarkdownIt
+from markdown_it.token import Token
+from mdit_py_plugins.tasklists import tasklists_plugin
+
 try:
     from charset_normalizer import from_bytes
 except ImportError:  # pragma: no cover - optional dependency
@@ -30,12 +34,13 @@ WHITESPACE_PATTERN = re.compile(r"\s+")
 SUMMARY_MAX_LENGTH = 120
 BODY_PREVIEW_ROWS = 3
 FALLBACK_ENCODINGS = ("utf-8", "utf-8-sig", "cp950", "big5", "gb18030")
-HEADING_PATTERN = re.compile(r"^(#{1,3})\s+(.+?)\s*$")
-ORDERED_LIST_PATTERN = re.compile(r"^\s*(\d+)\.\s+(.+?)\s*$")
-UNORDERED_LIST_PATTERN = re.compile(r"^\s*[*-]\s+(.+?)\s*$")
-BLOCKQUOTE_PATTERN = re.compile(r"^\s*>\s?(.*)$")
-HORIZONTAL_RULE_PATTERN = re.compile(r"^\s*([-*_])(?:\s*\1){2,}\s*$")
-INLINE_TOKEN_PATTERN = re.compile(r"(`[^`]+`|\*\*[^*].+?\*\*)")
+HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
+MARKDOWN_CONTROL_PATTERN = re.compile(r"[*_~`>#\[\]()!|:-]+")
+MARKDOWN_RENDERER = (
+    MarkdownIt("gfm-like", {"html": False, "linkify": True, "typographer": False})
+    .enable("table")
+    .use(tasklists_plugin, enabled=True, label=True)
+)
 
 
 @dataclass
@@ -135,14 +140,6 @@ def is_cjk_char(char: str) -> bool:
     )
 
 
-def is_heading_line(line: str) -> bool:
-    return bool(HEADING_PATTERN.match(line))
-
-
-def is_horizontal_rule(line: str) -> bool:
-    return bool(HORIZONTAL_RULE_PATTERN.match(line))
-
-
 def make_slug(value: str, used_slugs: set[str]) -> str:
     normalized = unicodedata.normalize("NFKC", strip_markdown(value)).strip().lower()
     normalized = normalized.replace(" ", "-")
@@ -159,59 +156,69 @@ def make_slug(value: str, used_slugs: set[str]) -> str:
     return candidate
 
 
-def render_inline(text: str) -> str:
-    parts: list[str] = []
-    last_index = 0
-
-    for match in INLINE_TOKEN_PATTERN.finditer(text):
-        if match.start() > last_index:
-            parts.append(html.escape(text[last_index:match.start()]))
-
-        token = match.group(0)
-        if token.startswith("`") and token.endswith("`"):
-            parts.append(f"<code>{html.escape(token[1:-1])}</code>")
-        else:
-            parts.append(f"<strong>{html.escape(token[2:-2])}</strong>")
-
-        last_index = match.end()
-
-    if last_index < len(text):
-        parts.append(html.escape(text[last_index:]))
-
-    return "".join(parts)
+def escape_raw_html(text: str) -> str:
+    return html.escape(text, quote=False)
 
 
 def strip_markdown(text: str) -> str:
-    cleaned = text
-    cleaned = re.sub(r"^\s{0,3}#{1,6}\s+", "", cleaned)
-    cleaned = re.sub(r"^\s*>\s?", "", cleaned, flags=re.MULTILINE)
-    cleaned = re.sub(r"^\s*(?:\d+\.\s+|[*-]\s+)", "", cleaned, flags=re.MULTILINE)
-    cleaned = cleaned.replace("**", "").replace("`", "")
-    cleaned = re.sub(r"\s+", " ", cleaned)
+    normalized = normalize_text(text)
+    escaped = escape_raw_html(normalized)
+    rendered = MARKDOWN_RENDERER.render(escaped)
+    without_tags = HTML_TAG_PATTERN.sub(" ", rendered)
+    decoded = html.unescape(without_tags)
+    cleaned = MARKDOWN_CONTROL_PATTERN.sub(" ", decoded)
+    cleaned = WHITESPACE_PATTERN.sub(" ", cleaned)
     return cleaned.strip()
 
 
-def find_summary_source(lines: list[str]) -> str:
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or is_horizontal_rule(stripped):
+def extract_inline_text(token: Token) -> str:
+    if token.type == "text":
+        return token.content
+    if token.type == "code_inline":
+        return token.content
+    if token.type == "image":
+        return token.content or token.attrGet("alt") or ""
+    if token.children:
+        return "".join(extract_inline_text(child) for child in token.children)
+    return token.content or ""
+
+
+def extract_heading_text(tokens: list[Token], heading_index: int) -> str:
+    if heading_index + 1 >= len(tokens):
+        return ""
+    inline_token = tokens[heading_index + 1]
+    return extract_inline_text(inline_token).strip()
+
+
+def collect_toc_items(tokens: list[Token], used_slugs: set[str]) -> list[TOCItem]:
+    toc_items: list[TOCItem] = []
+
+    for index, token in enumerate(tokens):
+        if token.type != "heading_open":
             continue
-        if is_heading_line(stripped):
+
+        level = int(token.tag[1:])
+        title = strip_markdown(extract_heading_text(tokens, index))
+        if not title:
             continue
 
-        quote_match = BLOCKQUOTE_PATTERN.match(stripped)
-        if quote_match:
-            stripped = quote_match.group(1).strip()
+        anchor = make_slug(title, used_slugs)
+        token.attrSet("id", anchor)
 
-        ordered_match = ORDERED_LIST_PATTERN.match(stripped)
-        if ordered_match:
-            stripped = ordered_match.group(2).strip()
+        if level >= 2:
+            toc_items.append(TOCItem(level=level, title=title, anchor=anchor))
 
-        unordered_match = UNORDERED_LIST_PATTERN.match(stripped)
-        if unordered_match:
-            stripped = unordered_match.group(1).strip()
+    return toc_items
 
-        plain = strip_markdown(stripped)
+
+def find_summary_source(tokens: list[Token]) -> str:
+    for index, token in enumerate(tokens):
+        if token.type != "inline":
+            continue
+        if index > 0 and tokens[index - 1].type == "heading_open":
+            continue
+
+        plain = strip_markdown(extract_inline_text(token))
         if plain:
             return plain
 
@@ -219,101 +226,13 @@ def find_summary_source(lines: list[str]) -> str:
 
 
 def render_markdown_document(text: str) -> tuple[str, list[TOCItem], str]:
-    lines = normalize_text(text).splitlines()
-    html_parts: list[str] = []
-    toc_items: list[TOCItem] = []
-    heading_slugs: set[str] = set()
-    index = 0
-
-    while index < len(lines):
-        raw_line = lines[index]
-        line = raw_line.strip()
-
-        if not line:
-            index += 1
-            continue
-
-        heading_match = HEADING_PATTERN.match(line)
-        if heading_match:
-            level = len(heading_match.group(1))
-            title = heading_match.group(2).strip()
-            anchor = make_slug(title, heading_slugs)
-            html_parts.append(f'<h{level} id="{anchor}">{render_inline(title)}</h{level}>')
-            if level >= 2:
-                toc_items.append(TOCItem(level=level, title=strip_markdown(title), anchor=anchor))
-            index += 1
-            continue
-
-        if is_horizontal_rule(line):
-            html_parts.append("<hr>")
-            index += 1
-            continue
-
-        quote_match = BLOCKQUOTE_PATTERN.match(raw_line)
-        if quote_match:
-            quote_lines: list[str] = []
-            while index < len(lines):
-                current_match = BLOCKQUOTE_PATTERN.match(lines[index])
-                if not current_match:
-                    break
-                content = current_match.group(1).strip()
-                if content:
-                    quote_lines.append(content)
-                index += 1
-
-            rendered_quote = " ".join(render_inline(item) for item in quote_lines)
-            html_parts.append(f"<blockquote><p>{rendered_quote}</p></blockquote>")
-            continue
-
-        ordered_match = ORDERED_LIST_PATTERN.match(raw_line)
-        if ordered_match:
-            items: list[str] = []
-            while index < len(lines):
-                current_match = ORDERED_LIST_PATTERN.match(lines[index])
-                if not current_match:
-                    break
-                items.append(f"<li>{render_inline(current_match.group(2).strip())}</li>")
-                index += 1
-            html_parts.append(f"<ol>{''.join(items)}</ol>")
-            continue
-
-        unordered_match = UNORDERED_LIST_PATTERN.match(raw_line)
-        if unordered_match:
-            items = []
-            while index < len(lines):
-                current_match = UNORDERED_LIST_PATTERN.match(lines[index])
-                if not current_match:
-                    break
-                items.append(f"<li>{render_inline(current_match.group(1).strip())}</li>")
-                index += 1
-            html_parts.append(f"<ul>{''.join(items)}</ul>")
-            continue
-
-        paragraph_lines: list[str] = []
-        while index < len(lines):
-            current = lines[index].strip()
-            if not current:
-                break
-            if (
-                is_heading_line(current)
-                or is_horizontal_rule(current)
-                or BLOCKQUOTE_PATTERN.match(lines[index])
-                or ORDERED_LIST_PATTERN.match(lines[index])
-                or UNORDERED_LIST_PATTERN.match(lines[index])
-            ):
-                break
-            paragraph_lines.append(current)
-            index += 1
-
-        paragraph = " ".join(paragraph_lines)
-        if paragraph:
-            html_parts.append(f"<p>{render_inline(paragraph)}</p>")
-            continue
-
-        index += 1
-
-    summary = summarize(find_summary_source(lines))
-    content_html = "\n          ".join(html_parts) if html_parts else "<p>來源檔案內容待整理。</p>"
+    normalized = normalize_text(text)
+    escaped = escape_raw_html(normalized)
+    tokens = MARKDOWN_RENDERER.parse(escaped)
+    toc_items = collect_toc_items(tokens, used_slugs=set())
+    summary = summarize(find_summary_source(tokens))
+    content_html = MARKDOWN_RENDERER.renderer.render(tokens, MARKDOWN_RENDERER.options, {})
+    content_html = content_html.strip() or "<p>來源檔案內容待整理。</p>"
     return content_html, toc_items, summary
 
 
@@ -567,7 +486,7 @@ def collect_articles() -> list[Article]:
     used_names: set[str] = set()
     articles: list[Article] = []
 
-    for path in sorted(SOURCE_DIR.glob("*.txt"), key=lambda item: (-item.stat().st_mtime, item.name.lower())):
+    for path in sorted(SOURCE_DIR.glob("*.txt"), key=lambda item: (item.stat().st_mtime, item.name.lower())):
         text = read_text_with_detected_encoding(path)
         content_html, toc_items, summary = render_markdown_document(text)
         output_name = slugify_filename(path.stem, used_names)
