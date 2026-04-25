@@ -405,7 +405,7 @@ def build_index_html(articles: list[Article]) -> str:
             id="article-search"
             class="search-input"
             type="search"
-            placeholder="例如：VBA、Excel、新手"
+            placeholder="請輸入您要查詢的關鍵字"
             autocomplete="off"
             spellcheck="false"
           >
