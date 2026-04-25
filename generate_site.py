@@ -270,8 +270,8 @@ def build_article_html(article: Article) -> str:
 def build_index_html(articles: list[Article]) -> str:
     article_cards = "".join(
         f"""
-          <article class="card article-card">
-            <p class="step-kicker">文章 {index:02d}</p>
+          <article class="card article-card" data-title="{html.escape(article.title, quote=True)}">
+            <p class="step-kicker">文章 {index:03d}</p>
             <h3>{html.escape(article.title)}</h3>
             <p class="article-card-summary">{html.escape(summarize_cjk_friendly(article.summary, 48))}</p>
             <div class="article-card-meta">
@@ -335,20 +335,69 @@ def build_index_html(articles: list[Article]) -> str:
         <div class="section-head">
           <div>
             <h2>教學資料彙整</h2>
+            <p>輸入文章標題關鍵字，立即篩選符合的教學內容。</p>
           </div>
           <span class="source-tag">
             {doc_icon()}
           </span>
         </div>
 
+        <div class="search-panel">
+          <label class="search-label" for="article-search">搜尋文章標題</label>
+          <input
+            id="article-search"
+            class="search-input"
+            type="search"
+            placeholder="例如：VBA、Excel、新手"
+            autocomplete="off"
+            spellcheck="false"
+          >
+        </div>
+
         <div class="grid article-grid">
           {article_cards}
         </div>
+        <p class="search-empty" id="search-empty" hidden>找不到符合這個關鍵字的文章標題。</p>
       </section>
     </main>
 
     {build_footer()}
   </div>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {{
+      const searchInput = document.getElementById("article-search");
+      const emptyState = document.getElementById("search-empty");
+      const articleCards = Array.from(document.querySelectorAll(".article-card"));
+
+      if (!searchInput || !emptyState || articleCards.length === 0) {{
+        return;
+      }}
+
+      const normalize = (value) => String(value || "").trim().toLowerCase();
+
+      const updateResults = () => {{
+        const query = normalize(searchInput.value);
+        let visibleCount = 0;
+
+        for (const card of articleCards) {{
+          const titleElement = card.querySelector("h3");
+          const title = normalize(titleElement ? titleElement.textContent : card.dataset.title);
+          const isMatch = query === "" || title.indexOf(query) !== -1;
+
+          card.style.display = isMatch ? "" : "none";
+          if (isMatch) {{
+            visibleCount += 1;
+          }}
+        }}
+
+        emptyState.style.display = visibleCount === 0 ? "block" : "none";
+      }};
+
+      searchInput.addEventListener("input", updateResults);
+      searchInput.addEventListener("search", updateResults);
+      updateResults();
+    }});
+  </script>
 </body>
 </html>
 """
