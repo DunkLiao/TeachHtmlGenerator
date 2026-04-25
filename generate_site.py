@@ -6,7 +6,6 @@ import shutil
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 try:
     from charset_normalizer import from_bytes
@@ -26,18 +25,24 @@ FOOTER_ITEMS = (
     ("版權所有", "© Dunk"),
 )
 
-TITLE_LINE_PATTERN = re.compile(r"^\s*\*\*(.+?)\*\*\s*$")
 SAFE_NAME_PATTERN = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af._ -]+")
 WHITESPACE_PATTERN = re.compile(r"\s+")
 SUMMARY_MAX_LENGTH = 120
 BODY_PREVIEW_ROWS = 3
 FALLBACK_ENCODINGS = ("utf-8", "utf-8-sig", "cp950", "big5", "gb18030")
+HEADING_PATTERN = re.compile(r"^(#{1,3})\s+(.+?)\s*$")
+ORDERED_LIST_PATTERN = re.compile(r"^\s*(\d+)\.\s+(.+?)\s*$")
+UNORDERED_LIST_PATTERN = re.compile(r"^\s*[*-]\s+(.+?)\s*$")
+BLOCKQUOTE_PATTERN = re.compile(r"^\s*>\s?(.*)$")
+HORIZONTAL_RULE_PATTERN = re.compile(r"^\s*([-*_])(?:\s*\1){2,}\s*$")
+INLINE_TOKEN_PATTERN = re.compile(r"(`[^`]+`|\*\*[^*].+?\*\*)")
 
 
 @dataclass
-class Section:
+class TOCItem:
+    level: int
     title: str
-    paragraphs: list[str]
+    anchor: str
 
 
 @dataclass
@@ -46,8 +51,8 @@ class Article:
     title: str
     output_name: str
     summary: str
-    intro: list[str]
-    sections: list[Section]
+    content_html: str
+    toc_items: list[TOCItem]
 
 
 def slugify_filename(name: str, used_names: set[str]) -> str:
@@ -88,65 +93,15 @@ def normalize_text(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n").replace("\ufeff", "")
 
 
-def split_paragraphs(text: str) -> list[str]:
-    normalized = normalize_text(text)
-    return [part.strip() for part in re.split(r"\n\s*\n", normalized) if part.strip()]
-
-
-def parse_text_sections(text: str) -> tuple[list[str], list[Section], str]:
-    lines = [line.strip() for line in normalize_text(text).splitlines()]
-    intro: list[str] = []
-    sections: list[Section] = []
-    current_section: Section | None = None
-    buffer: list[str] = []
-
-    def flush_buffer() -> None:
-        nonlocal buffer, current_section, intro
-        paragraph = "\n".join(line for line in buffer if line).strip()
-        buffer = []
-        if not paragraph:
-            return
-        if current_section is None:
-            intro.append(paragraph)
-        else:
-            current_section.paragraphs.append(paragraph)
-
-    for line in lines:
-        title_match = TITLE_LINE_PATTERN.match(line)
-        if title_match:
-            flush_buffer()
-            current_section = Section(title=title_match.group(1).strip(), paragraphs=[])
-            sections.append(current_section)
-            continue
-
-        if not line:
-            flush_buffer()
-            continue
-
-        buffer.append(line)
-
-    flush_buffer()
-
-    sections = [section for section in sections if section.paragraphs]
-
-    if not sections:
-        fallback_paragraphs = intro or split_paragraphs(text)
-        sections = [Section(title="內容重點", paragraphs=fallback_paragraphs)]
-        intro = []
-
-    summary_source = intro[0] if intro else sections[0].paragraphs[0]
-    return intro, sections, summarize(summary_source)
-
-
 def summarize(text: str, limit: int = SUMMARY_MAX_LENGTH) -> str:
-    compact = " ".join(strip_formatting(text).split())
+    compact = " ".join(strip_markdown(text).split())
     if len(compact) <= limit:
         return compact
     return compact[: limit - 1].rstrip() + "…"
 
 
 def summarize_cjk_friendly(text: str, limit: int) -> str:
-    compact = " ".join(strip_formatting(text).split())
+    compact = " ".join(strip_markdown(text).split())
     if not compact:
         return ""
 
@@ -180,17 +135,186 @@ def is_cjk_char(char: str) -> bool:
     )
 
 
-def escape_paragraphs(paragraphs: Iterable[str]) -> str:
-    return "".join(f"<p>{render_inline(paragraph)}</p>" for paragraph in paragraphs)
+def is_heading_line(line: str) -> bool:
+    return bool(HEADING_PATTERN.match(line))
+
+
+def is_horizontal_rule(line: str) -> bool:
+    return bool(HORIZONTAL_RULE_PATTERN.match(line))
+
+
+def make_slug(value: str, used_slugs: set[str]) -> str:
+    normalized = unicodedata.normalize("NFKC", strip_markdown(value)).strip().lower()
+    normalized = normalized.replace(" ", "-")
+    cleaned = SAFE_NAME_PATTERN.sub("", normalized)
+    cleaned = WHITESPACE_PATTERN.sub("-", cleaned).strip(" .-_") or "section"
+    candidate = cleaned
+    suffix = 2
+
+    while candidate in used_slugs:
+        candidate = f"{cleaned}-{suffix}"
+        suffix += 1
+
+    used_slugs.add(candidate)
+    return candidate
 
 
 def render_inline(text: str) -> str:
-    escaped = html.escape(text)
-    return re.sub(r"\*\*(.+?)\*\*", lambda match: f"<strong>{match.group(1)}</strong>", escaped)
+    parts: list[str] = []
+    last_index = 0
+
+    for match in INLINE_TOKEN_PATTERN.finditer(text):
+        if match.start() > last_index:
+            parts.append(html.escape(text[last_index:match.start()]))
+
+        token = match.group(0)
+        if token.startswith("`") and token.endswith("`"):
+            parts.append(f"<code>{html.escape(token[1:-1])}</code>")
+        else:
+            parts.append(f"<strong>{html.escape(token[2:-2])}</strong>")
+
+        last_index = match.end()
+
+    if last_index < len(text):
+        parts.append(html.escape(text[last_index:]))
+
+    return "".join(parts)
 
 
-def strip_formatting(text: str) -> str:
-    return text.replace("**", "")
+def strip_markdown(text: str) -> str:
+    cleaned = text
+    cleaned = re.sub(r"^\s{0,3}#{1,6}\s+", "", cleaned)
+    cleaned = re.sub(r"^\s*>\s?", "", cleaned, flags=re.MULTILINE)
+    cleaned = re.sub(r"^\s*(?:\d+\.\s+|[*-]\s+)", "", cleaned, flags=re.MULTILINE)
+    cleaned = cleaned.replace("**", "").replace("`", "")
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
+def find_summary_source(lines: list[str]) -> str:
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or is_horizontal_rule(stripped):
+            continue
+        if is_heading_line(stripped):
+            continue
+
+        quote_match = BLOCKQUOTE_PATTERN.match(stripped)
+        if quote_match:
+            stripped = quote_match.group(1).strip()
+
+        ordered_match = ORDERED_LIST_PATTERN.match(stripped)
+        if ordered_match:
+            stripped = ordered_match.group(2).strip()
+
+        unordered_match = UNORDERED_LIST_PATTERN.match(stripped)
+        if unordered_match:
+            stripped = unordered_match.group(1).strip()
+
+        plain = strip_markdown(stripped)
+        if plain:
+            return plain
+
+    return "來源檔案內容待整理"
+
+
+def render_markdown_document(text: str) -> tuple[str, list[TOCItem], str]:
+    lines = normalize_text(text).splitlines()
+    html_parts: list[str] = []
+    toc_items: list[TOCItem] = []
+    heading_slugs: set[str] = set()
+    index = 0
+
+    while index < len(lines):
+        raw_line = lines[index]
+        line = raw_line.strip()
+
+        if not line:
+            index += 1
+            continue
+
+        heading_match = HEADING_PATTERN.match(line)
+        if heading_match:
+            level = len(heading_match.group(1))
+            title = heading_match.group(2).strip()
+            anchor = make_slug(title, heading_slugs)
+            html_parts.append(f'<h{level} id="{anchor}">{render_inline(title)}</h{level}>')
+            if level >= 2:
+                toc_items.append(TOCItem(level=level, title=strip_markdown(title), anchor=anchor))
+            index += 1
+            continue
+
+        if is_horizontal_rule(line):
+            html_parts.append("<hr>")
+            index += 1
+            continue
+
+        quote_match = BLOCKQUOTE_PATTERN.match(raw_line)
+        if quote_match:
+            quote_lines: list[str] = []
+            while index < len(lines):
+                current_match = BLOCKQUOTE_PATTERN.match(lines[index])
+                if not current_match:
+                    break
+                content = current_match.group(1).strip()
+                if content:
+                    quote_lines.append(content)
+                index += 1
+
+            rendered_quote = " ".join(render_inline(item) for item in quote_lines)
+            html_parts.append(f"<blockquote><p>{rendered_quote}</p></blockquote>")
+            continue
+
+        ordered_match = ORDERED_LIST_PATTERN.match(raw_line)
+        if ordered_match:
+            items: list[str] = []
+            while index < len(lines):
+                current_match = ORDERED_LIST_PATTERN.match(lines[index])
+                if not current_match:
+                    break
+                items.append(f"<li>{render_inline(current_match.group(2).strip())}</li>")
+                index += 1
+            html_parts.append(f"<ol>{''.join(items)}</ol>")
+            continue
+
+        unordered_match = UNORDERED_LIST_PATTERN.match(raw_line)
+        if unordered_match:
+            items = []
+            while index < len(lines):
+                current_match = UNORDERED_LIST_PATTERN.match(lines[index])
+                if not current_match:
+                    break
+                items.append(f"<li>{render_inline(current_match.group(1).strip())}</li>")
+                index += 1
+            html_parts.append(f"<ul>{''.join(items)}</ul>")
+            continue
+
+        paragraph_lines: list[str] = []
+        while index < len(lines):
+            current = lines[index].strip()
+            if not current:
+                break
+            if (
+                is_heading_line(current)
+                or is_horizontal_rule(current)
+                or BLOCKQUOTE_PATTERN.match(lines[index])
+                or ORDERED_LIST_PATTERN.match(lines[index])
+                or UNORDERED_LIST_PATTERN.match(lines[index])
+            ):
+                break
+            paragraph_lines.append(current)
+            index += 1
+
+        paragraph = " ".join(paragraph_lines)
+        if paragraph:
+            html_parts.append(f"<p>{render_inline(paragraph)}</p>")
+            continue
+
+        index += 1
+
+    summary = summarize(find_summary_source(lines))
+    content_html = "\n          ".join(html_parts) if html_parts else "<p>來源檔案內容待整理。</p>"
+    return content_html, toc_items, summary
 
 
 def build_preview_rows(lines: list[str]) -> str:
@@ -203,30 +327,37 @@ def build_preview_rows(lines: list[str]) -> str:
             f"""
               <div class="formula-row">
                 <span class="cell">#{index}</span>
-                <span>{html.escape(summarize(strip_formatting(line), 72))}</span>
+                <span>{html.escape(summarize(strip_markdown(line), 72))}</span>
               </div>"""
         )
     return "".join(rows)
 
 
-def build_section_cards(sections: list[Section]) -> str:
-    cards = []
-    for index, section in enumerate(sections, start=1):
-        cards.append(
-            f"""
-          <article class="step-card">
-            <span class="icon" aria-hidden="true">{section_icon(index)}</span>
-            <div>
-              <p class="step-kicker">重點 {index:02d}</p>
-              <h3>{html.escape(section.title)}</h3>
-              {escape_paragraphs(section.paragraphs)}
-            </div>
-          </article>"""
-        )
-    return "".join(cards)
+def build_table_of_contents(toc_items: list[TOCItem]) -> str:
+    if not toc_items:
+        return ""
+
+    links = "".join(
+        f"""
+            <li class="toc-level-{item.level}">
+              <a href="#{html.escape(item.anchor, quote=True)}">{html.escape(item.title)}</a>
+            </li>"""
+        for item in toc_items
+    )
+
+    return f"""
+        <aside class="article-toc">
+          <p class="toc-label">文章目錄</p>
+          <ol>
+            {links}
+          </ol>
+        </aside>"""
 
 
 def build_article_html(article: Article) -> str:
+    table_of_contents = build_table_of_contents(article.toc_items)
+    layout_class = "article-layout with-toc" if article.toc_items else "article-layout"
+
     return f"""<!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -240,8 +371,12 @@ def build_article_html(article: Article) -> str:
     <header class="hero">
       <div class="hero-inner article-hero-inner">
         <div>
+          <p class="eyebrow">
+            {doc_icon()}
+            教學文章
+          </p>
           <h1>{html.escape(article.title)}</h1>
-          <p>{html.escape(summarize_cjk_friendly(article.summary, 20))}</p>
+          <p>{html.escape(summarize_cjk_friendly(article.summary, 52))}</p>
           <div class="hero-actions">
             <a class="button" href="./index.html">
               {arrow_left_icon()}
@@ -254,8 +389,11 @@ def build_article_html(article: Article) -> str:
 
     <main>
       <section class="content article-content" id="article-content">
-        <div class="article-sections">
-          {build_section_cards(article.sections)}
+        <div class="{layout_class}">
+          {table_of_contents}
+          <article class="markdown-body article-panel">
+            {article.content_html}
+          </article>
         </div>
       </section>
     </main>
@@ -431,7 +569,7 @@ def collect_articles() -> list[Article]:
 
     for path in sorted(SOURCE_DIR.glob("*.txt"), key=lambda item: (-item.stat().st_mtime, item.name.lower())):
         text = read_text_with_detected_encoding(path)
-        intro, sections, summary = parse_text_sections(text)
+        content_html, toc_items, summary = render_markdown_document(text)
         output_name = slugify_filename(path.stem, used_names)
         articles.append(
             Article(
@@ -439,8 +577,8 @@ def collect_articles() -> list[Article]:
                 title=path.stem,
                 output_name=output_name,
                 summary=summary,
-                intro=intro,
-                sections=sections,
+                content_html=content_html,
+                toc_items=toc_items,
             )
         )
 
@@ -466,20 +604,6 @@ def main() -> None:
     articles = collect_articles()
     write_output_files(articles)
     print(f"Generated {len(articles)} article page(s) in {OUTPUT_DIR}")
-
-
-def section_icon(index: int) -> str:
-    icons = (
-        """<svg viewBox="0 0 24 24"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/><path d="M8 5v14"/><path d="M16 5v14"/></svg>""",
-        """<svg viewBox="0 0 24 24"><path d="M9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>""",
-        """<svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>""",
-        """<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>""",
-    )
-    return icons[(index - 1) % len(icons)]
-
-
-def band_icon() -> str:
-    return """<svg viewBox="0 0 24 24"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>"""
 
 
 def spark_icon() -> str:
