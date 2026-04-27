@@ -22,6 +22,7 @@ SOURCE_DIR = ROOT_DIR / "source"
 OUTPUT_DIR = ROOT_DIR / "output_html"
 STYLE_SOURCE = ROOT_DIR / "style.css"
 STYLE_TARGET = OUTPUT_DIR / "style.css"
+SOURCE_PATTERNS = ("*.txt", "*.md")
 
 FOOTER_ITEMS = (
     ("免責申明", "基於公開資料，僅供參考，不構成建議"),
@@ -486,7 +487,13 @@ def collect_articles() -> list[Article]:
     used_names: set[str] = set()
     articles: list[Article] = []
 
-    for path in sorted(SOURCE_DIR.glob("*.txt"), key=lambda item: (item.stat().st_mtime, item.name.lower())):
+    source_paths = [
+        path
+        for pattern in SOURCE_PATTERNS
+        for path in SOURCE_DIR.glob(pattern)
+    ]
+
+    for path in sorted(source_paths, key=lambda item: (item.stat().st_mtime, item.name.lower())):
         text = read_text_with_detected_encoding(path)
         content_html, toc_items, summary = render_markdown_document(text)
         output_name = slugify_filename(path.stem, used_names)
