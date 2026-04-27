@@ -21,7 +21,8 @@ TeachHtmlGenerator/
 ├─ source/               # 放原始文章
 ├─ output_html/          # 產生出來的網站
 ├─ generate_site.py      # 產生網站的主程式
-├─ theme_options.py      # 選擇網站配色
+├─ site_config.txt       # 一般使用者調整設定
+├─ theme_options.py      # 內建配色方案定義
 ├─ style.css             # 網站樣式
 ├─ run.bat               # Windows 一鍵執行
 └─ requirements.txt      # 需要安裝的 Python 套件
@@ -30,7 +31,7 @@ TeachHtmlGenerator/
 一般使用時，最常碰到的是這三個地方：
 
 - `source/`：放文章
-- `theme_options.py`：選配色
+- `site_config.txt`：選配色
 - `run.bat`：產生網站
 
 `output_html/` 是程式產生的結果，不建議直接手動修改。要改內容，請回到 `source/` 修改文章後重新產生。
@@ -102,12 +103,12 @@ output_html/index.html
 
 ## 如何修改配色
 
-配色設定放在 `theme_options.py`。
+配色設定放在 `site_config.txt`。
 
-打開檔案後，修改最上方的 `THEME_KEY`：
+打開檔案後，把第一個不是 `#` 開頭的文字行改成想使用的配色 key：
 
-```python
-THEME_KEY = "ocean_cyan"
+```text
+ocean_cyan
 ```
 
 改完後重新執行：
@@ -137,7 +138,7 @@ mono_blue
 
 配色只會改變顏色，不會改變文章排版、卡片大小、欄位數量或整體布局。
 
-如果 `THEME_KEY` 寫錯，`run.bat` 會顯示錯誤並提示你回到 `theme_options.py` 檢查。
+如果配色 key 寫錯，`run.bat` 會顯示錯誤並提示你回到 `site_config.txt` 檢查。
 
 ## 文章可以怎麼寫
 
@@ -244,7 +245,7 @@ mono_blue
 
 不建議。
 
-`output_html/` 裡的檔案會在下次產生網站時被覆蓋。請修改 `source/` 裡的文章、`theme_options.py` 的配色，或 `style.css` 的樣式後重新產生。
+`output_html/` 裡的檔案會在下次產生網站時被覆蓋。請修改 `source/` 裡的文章、`site_config.txt` 的配色，或 `style.css` 的樣式後重新產生。
 
 ### 中文檔名可以用嗎？
 
@@ -277,8 +278,10 @@ style.css
 如果只想換顏色，請優先修改：
 
 ```text
-theme_options.py
+site_config.txt
 ```
+
+`theme_options.py` 是內建配色方案定義檔，通常不需要修改。
 
 ### 修改產生邏輯
 

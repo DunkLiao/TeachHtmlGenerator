@@ -25,12 +25,12 @@ if not defined PYTHON_EXE (
 )
 
 echo [INFO] Using Python: %PYTHON_EXE%
-echo [INFO] Theme is configured in theme_options.py
+echo [INFO] Theme is configured in site_config.txt
 
 "%PYTHON_EXE%" -c "from theme_options import get_selected_theme; print('[INFO] Selected theme: ' + get_selected_theme().name)"
 if errorlevel 1 (
   echo [ERROR] Theme configuration is invalid.
-  echo [HINT] Open theme_options.py and set THEME_KEY to one of the available theme keys.
+  echo [HINT] Open site_config.txt and set the theme key to one of the available theme keys.
   pause
   exit /b 1
 )

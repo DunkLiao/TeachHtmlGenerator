@@ -1,0 +1,3 @@
+# Change this value to switch the generated site's color theme.
+# Available theme keys are listed in theme_options.py.
+ocean_cyan

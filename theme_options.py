@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 
-THEME_KEY = "ocean_cyan"
 DEFAULT_THEME_KEY = "classic_rose"
+CONFIG_PATH = Path(__file__).resolve().with_name("site_config.txt")
 
 
 @dataclass(frozen=True)
@@ -310,8 +311,22 @@ COLOR_THEMES = {
 
 
 def get_selected_theme() -> ColorTheme:
+    theme_key = read_selected_theme_key()
+
     try:
-        return COLOR_THEMES[THEME_KEY]
+        return COLOR_THEMES[theme_key]
     except KeyError as exc:
         available = ", ".join(sorted(COLOR_THEMES))
-        raise ValueError(f"Unknown THEME_KEY '{THEME_KEY}'. Available themes: {available}") from exc
+        raise ValueError(f"Unknown theme key '{theme_key}' in site_config.txt. Available themes: {available}") from exc
+
+
+def read_selected_theme_key() -> str:
+    if not CONFIG_PATH.exists():
+        return DEFAULT_THEME_KEY
+
+    for line in CONFIG_PATH.read_text(encoding="utf-8").splitlines():
+        value = line.strip()
+        if value and not value.startswith("#"):
+            return value
+
+    return DEFAULT_THEME_KEY
