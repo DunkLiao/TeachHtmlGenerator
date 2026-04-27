@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import html
 import re
-import shutil
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +9,7 @@ from pathlib import Path
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 from mdit_py_plugins.tasklists import tasklists_plugin
+from theme_options import ColorTheme, get_selected_theme
 
 try:
     from charset_normalizer import from_bytes
@@ -37,6 +37,7 @@ BODY_PREVIEW_ROWS = 3
 FALLBACK_ENCODINGS = ("utf-8", "utf-8-sig", "cp950", "big5", "gb18030")
 HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
 MARKDOWN_CONTROL_PATTERN = re.compile(r"[*_~`>#\[\]()!|:-]+")
+CSS_ROOT_PATTERN = re.compile(r":root\s*\{.*?\}", re.DOTALL)
 MARKDOWN_RENDERER = (
     MarkdownIt("gfm-like", {"html": False, "linkify": True, "typographer": False})
     .enable("table")
@@ -482,6 +483,24 @@ def build_footer() -> str:
     </footer>"""
 
 
+def build_theme_root_css(theme: ColorTheme) -> str:
+    variables = "\n".join(
+        f"  {name}: {value};"
+        for name, value in sorted(theme.variables.items())
+    )
+    return f":root {{\n{variables}\n  --radius: 8px;\n}}"
+
+
+def build_themed_stylesheet(theme: ColorTheme) -> str:
+    stylesheet = STYLE_SOURCE.read_text(encoding="utf-8")
+    theme_root = build_theme_root_css(theme)
+
+    if CSS_ROOT_PATTERN.search(stylesheet):
+        return CSS_ROOT_PATTERN.sub(theme_root, stylesheet, count=1)
+
+    return f"{theme_root}\n\n{stylesheet}"
+
+
 def collect_articles() -> list[Article]:
     OUTPUT_DIR.mkdir(exist_ok=True)
     used_names: set[str] = set()
@@ -511,9 +530,9 @@ def collect_articles() -> list[Article]:
     return articles
 
 
-def write_output_files(articles: list[Article]) -> None:
+def write_output_files(articles: list[Article], theme: ColorTheme) -> None:
     if STYLE_SOURCE.exists():
-        shutil.copyfile(STYLE_SOURCE, STYLE_TARGET)
+        STYLE_TARGET.write_text(build_themed_stylesheet(theme), encoding="utf-8")
 
     index_html = build_index_html(articles)
     (OUTPUT_DIR / "index.html").write_text(index_html, encoding="utf-8")
@@ -527,9 +546,15 @@ def main() -> None:
     if not SOURCE_DIR.exists():
         raise SystemExit("source directory not found")
 
+    try:
+        theme = get_selected_theme()
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
     articles = collect_articles()
-    write_output_files(articles)
+    write_output_files(articles, theme)
     print(f"Generated {len(articles)} article page(s) in {OUTPUT_DIR}")
+    print(f"Theme: {theme.name}")
 
 
 def spark_icon() -> str:

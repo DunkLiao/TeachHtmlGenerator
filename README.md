@@ -1,260 +1,313 @@
 # TeachHtmlGenerator
 
-`TeachHtmlGenerator` 是一個用 Python 撰寫的靜態網站產生器，會把 `source/` 裡的教學文章純文字檔轉成可直接瀏覽的 HTML 網站。
+TeachHtmlGenerator 是一個把文章檔案轉成靜態網站的小工具。你只要把文章放進 `source/` 資料夾，執行程式後，就會在 `output_html/` 產生可以用瀏覽器打開的網站。
 
-目前專案的定位很明確：
+這個工具適合用來整理教學文章、筆記、NotebookLM 回答內容，或任何想快速做成可瀏覽網頁的文字資料。
 
-- 輸入是 `source/*.txt`
-- 輸出是 `output_html/*.html` 與 `output_html/style.css`
-- 不依賴後端框架、資料庫或前端打包工具
-- 以繁體中文內容與 CJK 顯示為主要使用情境
+## 你可以用它做什麼
 
-## 專案目的
+- 把多篇 `.txt` 或 `.md` 文章轉成 HTML 網頁
+- 自動產生首頁與文章列表
+- 在首頁用文章標題快速搜尋
+- 自動產生文章摘要
+- 自動建立文章目錄
+- 支援 Markdown 常用格式
+- 用設定檔切換網站配色
 
-這個專案適合用在以下情境：
-
-- 將一批教學文章快速整理成可瀏覽的靜態網站
-- 用最少依賴維持可讀性高的 HTML 輸出
-- 讓非工程背景的人也能只靠編輯 `.txt` 檔更新內容
-- 文字檔來源：詢問notebooklm的回答結果。
-
-## 目前功能
-
-- 自動讀取 `source/` 內所有 `.txt` 文章
-- 依檔名產生頁面標題與輸出檔名
-- 支援 Markdown 與常見 GFM 語法輸出
-- 自動建立文章頁目錄錨點
-- 首頁提供文章標題即時搜尋
-- 自動產生摘要並套用 CJK 友善截斷
-- 複製共用樣式到輸出目錄
-
-## 技術棧
-
-### 生成端
-
-- Python 3
-- Python 標準函式庫
-  - `pathlib`
-  - `dataclasses`
-  - `re`
-  - `html`
-  - `shutil`
-  - `unicodedata`
-- `charset-normalizer`
-  - 改善來源文字編碼辨識
-- `markdown-it-py`
-  - 將文章內容解析成 HTML
-- `mdit-py-plugins`
-  - 啟用 task list 等延伸語法
-- `linkify-it-py`
-  - 支援自動連結辨識
-
-### 前端輸出
-
-- 純 HTML5
-- 單一共享樣式檔 [`style.css`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/style.css)
-- 首頁少量原生 JavaScript，用於前端搜尋過濾
-- 原生 SVG icon 直接內嵌在 HTML 中
-
-## 專案結構
+## 資料夾怎麼看
 
 ```text
 TeachHtmlGenerator/
-├─ generate_site.py      # 主程式：讀取來源、轉成 HTML、輸出網站
-├─ style.css             # 共用樣式
-├─ run.bat               # Windows 執行入口
-├─ requirements.txt      # 專案依賴
-├─ source/               # 文章來源 .txt
-└─ output_html/          # 生成後網站輸出
+├─ source/               # 放原始文章
+├─ output_html/          # 產生出來的網站
+├─ generate_site.py      # 產生網站的主程式
+├─ theme_options.py      # 選擇網站配色
+├─ style.css             # 網站樣式
+├─ run.bat               # Windows 一鍵執行
+└─ requirements.txt      # 需要安裝的 Python 套件
 ```
 
-## 安裝與執行
+一般使用時，最常碰到的是這三個地方：
 
-先安裝依賴：
+- `source/`：放文章
+- `theme_options.py`：選配色
+- `run.bat`：產生網站
+
+`output_html/` 是程式產生的結果，不建議直接手動修改。要改內容，請回到 `source/` 修改文章後重新產生。
+
+## 快速開始
+
+### 1. 安裝需要的套件
+
+第一次使用前，請先安裝套件：
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-再產生網站：
+如果你使用 Windows，也可以先直接執行 `run.bat`。如果缺少套件，批次檔會提示你要執行哪一行安裝指令。
 
-```powershell
-python generate_site.py
+### 2. 放入文章
+
+把文章放到 `source/` 資料夾。
+
+支援的檔案格式：
+
+- `.txt`
+- `.md`
+
+檔名會變成文章標題。例如：
+
+```text
+source/教我如何利用 AI 輔助寫 Excel 公式.md
 ```
 
-Windows 也可以直接使用：
+產生後，文章頁標題會是：
 
-```powershell
+```text
+教我如何利用 AI 輔助寫 Excel 公式
+```
+
+### 3. 產生網站
+
+Windows 使用者可以直接雙擊：
+
+```text
 run.bat
 ```
 
-成功後會在 `output_html/` 看到：
+或在 PowerShell 執行：
 
-- `index.html`
-- 每篇文章對應的 `.html`
-- `style.css`
+```powershell
+.\run.bat
+```
 
-## 生成流程
-
-核心邏輯集中在 [`generate_site.py`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/generate_site.py)：
-
-1. 掃描 `source/` 內所有 `.txt`
-2. 嘗試偵測並讀取文字編碼
-3. 正規化換行與 BOM
-4. 以 Markdown/GFM 規則解析內容
-5. 建立文章摘要與目錄錨點
-6. 依原始檔名產生安全輸出檔名
-7. 輸出 `index.html` 與各文章頁
-8. 複製 `style.css` 到 `output_html/`
-
-## 文字檔格式
-
-目前文章內容不是走舊版的自訂 `**章節**` 規則，而是直接交給 Markdown 解析器處理。
-
-可用的內容形式包含：
-
-- 段落
-- 標題 `#`、`##`、`###`
-- 粗體、斜體、行內程式碼
-- 清單與核取方塊
-- 表格
-- 自動連結
-
-HTML 原始碼不會直接放行；程式會先 escape 再交給 Markdown renderer，因此來源文字會以較保守、安全的方式輸出。
-
-## 摘要與文章目錄
-
-摘要會從文章中第一個可讀文字區塊擷取，再做長度裁切。
-
-- 一般摘要邏輯使用 `summarize()`
-- 首頁與文章頁顯示時會再使用 `summarize_cjk_friendly()`，避免中日韓文字被截得太難看
-
-文章內容中的標題會自動建立錨點 `id`，並在文章頁右側或上方顯示「文章目錄」。
-
-- 所有標題都會被賦予錨點
-- `h2` 以上層級會進入 TOC 清單
-- 相同標題會自動補 `-2`、`-3` 避免衝突
-
-## 檔名與輸出規則
-
-來源檔名會同時影響文章標題與輸出檔名。
-
-- 檔名去掉副檔名後，直接作為文章標題
-- 會經過 Unicode `NFKC` 正規化
-- 允許英數字、CJK、日文、韓文、`.`、`_`、空白、`-`
-- 多個空白會壓成單一 `-`
-- 會補上 `.html`
-- 若重名，會自動加上 `-2`、`-3` 等尾碼
-
-因此中文檔名可直接保留，不需要另外手動轉 slug。
-
-## 編碼處理
-
-讀取來源文字時，程式會優先使用 `charset-normalizer` 偵測；若不可用，則退回以下編碼依序嘗試：
-
-- `utf-8`
-- `utf-8-sig`
-- `cp950`
-- `big5`
-- `gb18030`
-
-若全部失敗，最後會用 `utf-8` 加上 `errors="replace"` 兜底。
-
-## 輸出頁面
-
-### 首頁 `index.html`
-
-首頁目前包含：
-
-- 站點主視覺區塊
-- 已收錄文章數
-- 文章標題搜尋欄
-- 文章卡片列表
-
-搜尋是前端即時過濾，依標題文字比對，不需要後端。
-
-### 文章頁
-
-每篇文章頁目前包含：
-
-- 文章標題
-- 文章摘要
-- 返回首頁按鈕
-- 文章目錄
-- Markdown 轉換後的正文內容
-- 固定頁尾資訊
-
-## `run.bat` 行為
-
-[`run.bat`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/run.bat) 的流程是：
-
-1. 切換到專案目錄
-2. 優先找 `D:\ProgramData\anaconda3\python.exe`
-3. 找不到再用 `where python`
-4. 執行 `generate_site.py`
-5. 顯示成功或失敗訊息
-
-這個批次檔偏向 Windows 本機使用情境。
-
-## 開發說明
-
-### 日常更新內容
-
-如果只是新增或修改文章，通常只需要：
-
-1. 編輯 `source/*.txt`
-2. 執行 `python generate_site.py`
-3. 檢查 `output_html/index.html` 與文章頁
-
-### 調整樣式
-
-請修改 [`style.css`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/style.css)。
-
-### 調整生成邏輯
-
-請修改 [`generate_site.py`](D:/SourceCode/VibeCoding/TeachHtmlGenerator/generate_site.py)。
-
-### 不建議直接修改輸出檔
-
-`output_html/` 是生成產物，除錯以外不建議直接手改。
-
-## 手動驗證
-
-目前沒有自動化測試；每次修改後建議至少執行：
+也可以手動執行：
 
 ```powershell
 python generate_site.py
 ```
 
-然後確認：
+成功後，網站會產生在：
 
-- `output_html/index.html` 已重新產生
-- 至少開一篇文章頁，確認標題、摘要、Markdown 內容與目錄正常
-- 至少檢查一篇非 ASCII / 中文檔名來源文章
+```text
+output_html/
+```
+
+請打開：
+
+```text
+output_html/index.html
+```
+
+## 如何修改配色
+
+配色設定放在 `theme_options.py`。
+
+打開檔案後，修改最上方的 `THEME_KEY`：
+
+```python
+THEME_KEY = "ocean_cyan"
+```
+
+改完後重新執行：
+
+```powershell
+.\run.bat
+```
+
+網站就會用新的配色重新產生。
+
+### 可用配色
+
+目前提供 10 種配色：
+
+```text
+classic_rose
+slate_gold
+forest_mint
+ocean_cyan
+indigo_lime
+terracotta_sage
+charcoal_coral
+plum_amber
+teal_copper
+mono_blue
+```
+
+配色只會改變顏色，不會改變文章排版、卡片大小、欄位數量或整體布局。
+
+如果 `THEME_KEY` 寫錯，`run.bat` 會顯示錯誤並提示你回到 `theme_options.py` 檢查。
+
+## 文章可以怎麼寫
+
+文章內容支援常見 Markdown 寫法。
+
+### 標題
+
+```markdown
+# 文章主標題
+
+## 第一段
+
+### 小節標題
+```
+
+文章頁會依照標題自動建立目錄。
+
+### 段落與清單
+
+```markdown
+這是一段文字。
+
+- 第一點
+- 第二點
+- 第三點
+```
+
+### 粗體、斜體、程式碼
+
+```markdown
+這是 **粗體**。
+這是 *斜體*。
+這是 `行內程式碼`。
+```
+
+### 表格
+
+```markdown
+| 項目 | 說明 |
+| --- | --- |
+| A | 第一個項目 |
+| B | 第二個項目 |
+```
+
+### 待辦清單
+
+```markdown
+- [x] 已完成
+- [ ] 尚未完成
+```
+
+## 產生出來的網站包含什麼
+
+執行成功後，`output_html/` 會包含：
+
+- `index.html`：首頁
+- 每篇文章各自的 `.html` 頁面
+- `style.css`：套用選定配色後的樣式檔
+
+首頁會顯示：
+
+- 網站標題
+- 已收錄文章數量
+- 文章搜尋欄
+- 文章卡片列表
+
+文章頁會顯示：
+
+- 文章標題
+- 自動摘要
+- 返回首頁按鈕
+- 文章目錄
+- 文章正文
+- 頁尾資訊
+
+## run.bat 做了什麼
+
+`run.bat` 是 Windows 的一鍵執行檔。它會自動做這些事：
+
+1. 切換到專案資料夾
+2. 尋找可用的 Python
+3. 跳過 Windows Store 的 Python 假入口
+4. 顯示目前選用的配色
+5. 檢查配色設定是否正確
+6. 檢查必要套件是否已安裝
+7. 執行 `generate_site.py`
+8. 產生 `output_html/index.html`
+
+如果執行失敗，請先看畫面上的 `[ERROR]` 與 `[HINT]` 提示。
+
+## 常見問題
+
+### 我改了文章，但網頁沒有變
+
+請確認你已經重新執行：
+
+```powershell
+.\run.bat
+```
+
+然後重新整理瀏覽器頁面。
+
+### 我可以直接修改 output_html 裡的檔案嗎？
+
+不建議。
+
+`output_html/` 裡的檔案會在下次產生網站時被覆蓋。請修改 `source/` 裡的文章、`theme_options.py` 的配色，或 `style.css` 的樣式後重新產生。
+
+### 中文檔名可以用嗎？
+
+可以。
+
+程式會保留中文、日文、韓文等常見 CJK 字元，並自動把不適合用在檔名的符號移除。
+
+### 文章一定要用 Markdown 嗎？
+
+不一定。
+
+一般純文字也可以使用。Markdown 只是讓你可以加標題、清單、表格、粗體等格式。
+
+### 首頁搜尋會搜尋文章內文嗎？
+
+目前不會。
+
+首頁搜尋只比對文章標題。
+
+## 進階調整
+
+### 修改網站樣式
+
+如果要調整字體、間距、卡片樣式或其他畫面細節，請修改：
+
+```text
+style.css
+```
+
+如果只想換顏色，請優先修改：
+
+```text
+theme_options.py
+```
+
+### 修改產生邏輯
+
+如果要改文章排序、摘要規則、HTML 結構或頁尾內容，請修改：
+
+```text
+generate_site.py
+```
+
+## 手動檢查建議
+
+每次修改後，建議檢查：
+
+- `output_html/index.html` 是否有重新產生
+- 首頁文章列表是否正常
+- 至少一篇文章頁是否能打開
+- 文章標題、摘要、目錄是否正常
+- 中文檔名文章是否正常顯示
+- 選擇的配色是否已套用
 
 ## 已知限制
 
+- 沒有後台管理介面
+- 沒有資料庫
 - 沒有自動化測試
-- 沒有 CLI 參數，輸入與輸出目錄目前固定
-- 首頁搜尋只比對文章標題，不搜尋內文
-- 站點標題與 footer 內容目前寫死在程式常數中
-- 來源文字中的原始 HTML 不會直接當作 HTML 輸出
-
-## 後續可擴充方向
-
-- 加入 `pytest` 測試
-- 將站點標題、footer 文案改為可設定
-- 增加 CLI 參數，例如自訂輸入輸出路徑
-- 支援文章標籤、分類或排序選項
-- 增加 sitemap、Open Graph 或其他 metadata
-- 補上內容全文搜尋
-
-## 授權與產物說明
-
-- `source/`：內容來源
-- `output_html/`：生成產物
-- 請優先修改來源或模板程式，再重新生成
+- 首頁搜尋目前只搜尋文章標題
+- 網站標題與頁尾文字目前寫在程式裡
+- 原始 HTML 會被當成文字處理，不會直接當作 HTML 執行
 
 ## 作者
 
-Dunk & CODEX
+Dunk & Codex
