@@ -1,3 +1,5 @@
-# Change this value to switch the generated site's color theme.
-# Available theme keys are listed in theme_options.py.
-ocean_cyan
+# 網站配色設定。
+# 請把第一個不是 # 開頭的文字行設為想使用的配色 key。
+# 預設配色為 classic_rose。
+# 可用配色 key 請參考 theme_options.py 或 README.md 的「可用配色」章節。
+classic_rose

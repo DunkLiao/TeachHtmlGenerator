@@ -105,6 +105,8 @@ output_html/index.html
 
 配色設定放在 `site_config.txt`。
 
+預設配色為 `classic_rose`。
+
 打開檔案後，把第一個不是 `#` 開頭的文字行改成想使用的配色 key：
 
 ```text
