@@ -105,7 +105,7 @@ output_html/index.html
 
 配色設定放在 `site_config.txt`。
 
-預設配色為 `classic_rose`。
+預設配色為 `minimalist_bujo`。
 
 打開檔案後，把第一個不是 `#` 開頭的文字行改成想使用的配色 key：
 
@@ -123,7 +123,7 @@ ocean_cyan
 
 ### 可用配色
 
-目前提供 10 種配色：
+目前提供 13 種配色：
 
 ```text
 classic_rose
@@ -136,6 +136,9 @@ charcoal_coral
 plum_amber
 teal_copper
 mono_blue
+minimalist_bujo
+notebook_ink
+cyberpunk_presentation
 ```
 
 配色只會改變顏色，不會改變文章排版、卡片大小、欄位數量或整體布局。
