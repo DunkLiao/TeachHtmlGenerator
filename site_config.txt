@@ -1,5 +1,7 @@
-# 網站配色設定。
+# 網站設定。
 # 請把第一個不是 # 開頭的文字行設為想使用的配色 key。
 # 預設配色為 minimalist_bujo。
 # 可用配色 key 請參考 theme_options.py 或 README.md 的「可用配色」章節。
+# site_title 會顯示為「site_title 教學資料彙整」。
 minimalist_bujo
+site_title=AI與EXCEL協作

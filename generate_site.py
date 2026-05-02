@@ -10,6 +10,7 @@ from markdown_it import MarkdownIt
 from markdown_it.token import Token
 from mdit_py_plugins.tasklists import tasklists_plugin
 from theme_options import ColorTheme, get_selected_theme
+from theme_options import CONFIG_PATH as SITE_CONFIG_PATH
 
 try:
     from charset_normalizer import from_bytes
@@ -34,6 +35,7 @@ SAFE_NAME_PATTERN = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff\u3040-\u30ff\uac00-\ud
 WHITESPACE_PATTERN = re.compile(r"\s+")
 SUMMARY_MAX_LENGTH = 120
 BODY_PREVIEW_ROWS = 3
+INDEX_TITLE_SUFFIX = "教學資料彙整"
 FALLBACK_ENCODINGS = ("utf-8", "utf-8-sig", "cp950", "big5", "gb18030")
 HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
 MARKDOWN_CONTROL_PATTERN = re.compile(r"[*_~`>#\[\]()!|:-]+")
@@ -60,6 +62,36 @@ class Article:
     summary: str
     content_html: str
     toc_items: list[TOCItem]
+
+
+@dataclass(frozen=True)
+class SiteConfig:
+    site_title: str = ""
+
+
+def read_site_config() -> SiteConfig:
+    if not SITE_CONFIG_PATH.exists():
+        return SiteConfig()
+
+    site_title = ""
+
+    for line in SITE_CONFIG_PATH.read_text(encoding="utf-8").splitlines():
+        value = line.strip()
+        if not value or value.startswith("#") or "=" not in value:
+            continue
+
+        key, raw_value = value.split("=", 1)
+        if key.strip().lower() == "site_title":
+            site_title = raw_value.strip()
+
+    return SiteConfig(site_title=site_title)
+
+
+def build_index_title(site_title: str) -> str:
+    title = site_title.strip()
+    if not title:
+        return INDEX_TITLE_SUFFIX
+    return f"{title} {INDEX_TITLE_SUFFIX}"
 
 
 def slugify_filename(name: str, used_names: set[str]) -> str:
@@ -326,7 +358,8 @@ def build_article_html(article: Article) -> str:
 """
 
 
-def build_index_html(articles: list[Article]) -> str:
+def build_index_html(articles: list[Article], config: SiteConfig) -> str:
+    index_title = build_index_title(config.site_title)
     article_cards = "".join(
         f"""
           <article class="card article-card" data-title="{html.escape(article.title, quote=True)}">
@@ -349,7 +382,7 @@ def build_index_html(articles: list[Article]) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>教學資料彙整</title>
+  <title>{html.escape(index_title)}</title>
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
@@ -361,7 +394,7 @@ def build_index_html(articles: list[Article]) -> str:
             {spark_icon()}
             首頁
           </p>
-          <h1>教學資料彙整</h1>
+          <h1>{html.escape(index_title)}</h1>
           <div class="hero-actions">
             <a class="button" href="#article-list">
               {arrow_right_icon()}
@@ -393,7 +426,7 @@ def build_index_html(articles: list[Article]) -> str:
       <section class="content" id="article-list">
         <div class="section-head">
           <div>
-            <h2>教學資料彙整</h2>
+            <h2>{html.escape(index_title)}</h2>
             <p>輸入文章標題關鍵字，立即篩選符合的教學內容。</p>
           </div>
           <span class="source-tag">
@@ -530,11 +563,11 @@ def collect_articles() -> list[Article]:
     return articles
 
 
-def write_output_files(articles: list[Article], theme: ColorTheme) -> None:
+def write_output_files(articles: list[Article], theme: ColorTheme, config: SiteConfig) -> None:
     if STYLE_SOURCE.exists():
         STYLE_TARGET.write_text(build_themed_stylesheet(theme), encoding="utf-8")
 
-    index_html = build_index_html(articles)
+    index_html = build_index_html(articles, config)
     (OUTPUT_DIR / "index.html").write_text(index_html, encoding="utf-8")
 
     for article in articles:
@@ -551,10 +584,12 @@ def main() -> None:
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
+    config = read_site_config()
     articles = collect_articles()
-    write_output_files(articles, theme)
+    write_output_files(articles, theme, config)
     print(f"Generated {len(articles)} article page(s) in {OUTPUT_DIR}")
     print(f"Theme: {theme.name}")
+    print(f"Index title: {build_index_title(config.site_title)}")
 
 
 def spark_icon() -> str:
