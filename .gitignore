@@ -17,5 +17,5 @@ ENV/
 .vscode/
 
 output_html/
-source/*.txt
+source/
 AGENTS.md
